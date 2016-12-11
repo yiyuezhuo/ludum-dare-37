@@ -1,0 +1,118 @@
+
+
+body{
+	background-color : #888;
+}
+
+
+.ng{
+	position : absolute;
+	top : 8px;
+	left : 8px;
+	bottom : 8px;
+	right : 8px;
+	background-color : #fff;
+	border-radius : 8px 8px 0px 0px;
+	overflow : hidden;
+}
+
+.ng-top{
+	position : absolute;
+	height : 70%;
+	width : 100%;
+	display : flex; 
+}
+
+
+.ng-left{
+	width : 10%;
+	background-color : #ddd;
+	height : 100%;
+}
+
+.ng-main{
+	width : 60%;
+	background-color : #eee;
+	height : 100%;
+}
+
+.ng-sample{
+	width : 30%;
+	background-color : #fff;
+	height : 100%;
+	display : flex;
+	flex-wrap : wrap;
+}
+
+.ng-sample-header{
+	width : 100%;
+	height : 5%;
+	background-color : #ded;
+	display : flex;
+}
+
+.ng-sample-value{
+	width : 100%;
+	height : 95%;
+	overflow : auto;
+	display : flex;
+	flex-wrap : wrap;
+}
+
+
+.ng-matrix{
+	position : absolute;
+	display : flex;
+	top : 70%;
+	bottom : 0px;
+	width : 100%;
+}
+
+.ng-matrix-names {
+	width : 12%;
+	background-color : #ded;
+	height : 100%;
+}
+
+.ng-matrix-mu{
+	width : 7%;
+	background-color : #eef;
+	height : 100%;
+}
+
+.ng-matrix-mu-change{
+	width : 7%;
+	background-color : #efe;
+	height : 100%;
+}
+
+.ng-matrix-variance{
+	width : 7%;
+	background-color : #fee;
+	height : 100%;
+}
+
+.ng-matrix-variance-change{
+	width : 7%;
+	background-color : #eff;
+	height : 100%;
+}
+
+.ng-matrix-correlation{
+	width : 30%;
+	background-color : #fef;
+	height : 100%;
+}
+
+.ng-matrix-correlation-change{
+	width : 30%;
+	background-color : #ffe;
+	height : 100%;
+}
+
+.matrix {
+	display : flex;
+	flex-wrap : wrap;
+	text-align: center;
+	font-family: fantasy;
+}
