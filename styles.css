@@ -12,3 +12,30 @@
 
 .matrix-cell {
 }
+
+a.button {
+  text-decoration : none;
+  color : white;
+  background-color:#7f1278;
+  padding : 6px 8px 6px 8px;
+  border-radius : 4px;
+  text-align: center;
+  margin : 4px;
+  font-family : "Consolas", "Bitstream Vera Sans Mono", "Courier New", Courier, monospace !important;
+  /*
+  width: 80%;
+  height : 10%;
+  */
+}
+
+.isRemoved {
+	background-color: #900;
+}
+
+.isAdd{
+	background-color: #9f9;
+}
+
+.isSub{
+	background-color : #f99;
+}

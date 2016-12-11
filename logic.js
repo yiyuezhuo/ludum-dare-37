@@ -11,7 +11,7 @@ function loadScript(newJS){
 		document.getElementsByTagName("html")[0].appendChild(scriptObj);
 }
 
-loadScript("future.js");
+loadScript("mao.js");
 
 var DataFrame = function(header, type, values){
 	this.header = header;
@@ -37,6 +37,14 @@ DataFrame.prototype.as_matrix = function(){
 	}).map(function(h){
 		return that.values[h] 
 	}); 
+}
+DataFrame.from_matrix = function(header, type, mat){
+	// matrix is same as_matrix result (p,n) shape
+	var df = new DataFrame(header, type);
+	df.header.forEach(function(h,i){
+		df.values[h] = mat[i];
+	})
+	return df;
 }
 DataFrame.prototype.cov = function(){
 	return cov(this.as_matrix())
@@ -106,6 +114,35 @@ DataFrame.prototype.copy = function(){
 	return df;
 }
 
+function DeltaTable(header, type, values, isRemoved){
+	
+	DataFrame.call(this, header, type, values);
+	
+	this.isRemoved = isRemoved; // vector, is same size on df
+}
+DeltaTable.prototype = Object.create(DataFrame.prototype);
+DeltaTable.from_matrix = function(header, type, mat, isRemoved){
+	var dt = new DeltaTable(header, type);
+	dt.header.forEach(function(h,i){
+		dt.values[h] = mat[i];
+	})
+	dt.isRemoved = isRemoved;
+	return dt;
+}
+DeltaTable.prototype.apply = function(df){
+	// only number modified, not remove
+	return DataFrame.from_matrix(df.header, df.type, jStat.add(df.as_matrix(), this.as_matrix()));
+}
+DeltaTable.prototype.applyWithRemoved = function(df){
+	// number modified, not remove
+	var that = this;
+	var raw = jStat.add(df.as_matrix(), this.as_matrix());
+	var mat = jStat.transpose(jStat.transpose(raw).filter(function(row,i){
+		return !that.isRemoved[i];
+	}));
+	return DataFrame.from_matrix(df.header, df.type, mat);
+}
+
 
 var Population = function(df1,df2,k){
 	// Anyway, df1,df2 can be both DataFrame and Population. Or any have `mean`,`cov`,`header`,`type` ones.
@@ -152,10 +189,10 @@ Population.prototype.sample = function(size){
 
 function streesNumber(n){
 
-	if(Math.abs(n)<1e-6){
+	if(Math.abs(n)<1e-5){
 		return '0';
 	}
-	if(Math.abs(1-n)<1e-6){
+	if(Math.abs(1-n)<1e-5){
 		return '1';
 	}
 
@@ -245,9 +282,10 @@ function drawMatrix(dom, mat, names, config){
 		
 }
 
-function drawSample(domHeader, header, domValue, value, height){
+function drawSample(domHeader, header, domValue, value, dt, height){
 	// click header will sort the matrix, click record will kill this one.
 	// value is df.as_matrix result ((p,n) shape). It should be transposed before render it.
+	// dt is delta table, if it given, domValue is modified by dt before call this function.
 	var width = 100/jStat.rows(value);
 	height = height || 5;
 	
@@ -267,26 +305,114 @@ function drawSample(domHeader, header, domValue, value, height){
 				drawSample(domHeader, header, domValue, jStat.transpose(v), height);
 			})
 	
-	var rows = d3.select(domValue).selectAll('span.row').data(jStat.transpose(value));
+	var rowsData;
+	if(!dt){
+		rowsData = jStat.transpose(value).map(function(matRow,i){
+			var cellData = matRow.map(function(matCell,j){
+				return {value: matCell, change:0};
+			})
+			return {isRemoved:false, cellData:cellData};
+		})
+	}
+	else{
+		var deltaMat = jStat.transpose(dt.as_matrix());
+		rowsData = jStat.transpose(value).map(function(matRow,i){
+			var removed = dt.isRemoved[i];
+			var cellData;
+			if(removed){ // not show change color
+				cellData = matRow.map(function(matCell,j){
+					return {value: matCell, change: 0};
+				})
+			}
+			else{
+				cellData = matRow.map(function(matCell,j){
+					return {value: matCell, change: deltaMat[i][j]};
+				})
+			}
+			return {isRemoved: removed, cellData:cellData};
+		})
+	}
+	
+	var rows = d3.select(domValue).selectAll('span.row').data(rowsData);
+	
 	rows.enter().append('span').classed('row', true)
 		.style('width','100%')
 		.style('height', height + '%')
 		.classed("matrix", true);
+		/*
+		.classed('isRemoved', function(rowData){
+			return rowData.isRemoved
+		})
+		*/
+	
 	rows.transition();
+		/*
+		.classed('isRemoved', function(rowData){
+			return rowData.isRemoved
+		});
+		*/
+	
 	rows.exit().remove();
+	
+	d3.select(domValue).selectAll('span.row').data(rowsData).classed('isRemoved', function(rowData){
+		return rowData.isRemoved
+	});
+
 			
 	d3.select(domValue).selectAll('span.row').each(function(d){
-		var cols = d3.select(this).selectAll('span.cell').data(d)
+		var cols = d3.select(this).selectAll('span.cell').data(d.cellData)
+		
 		cols.enter().append('span').classed('cell', true)
 			.style('width', width + '%')
 			.style('height', '100%')
-			.text(function(d){return format(d);})
-		cols.transition().text(function(d){return format(d);})
+			.text(function(d){
+				//console.log(d);
+				return format(d.value);
+			})
+			/*
+			.classed('isAdd',function(d){
+				return d.change >0;
+			})
+			.classed('isSub',function(d){
+				return d.change <0;
+			})
+			*/
+			
+		cols.transition()
+			.text(function(d){
+				return format(d.value);
+			})
+			/*
+			.classed('isAdd',function(d){
+				return d.change >0;
+			})
+			.classed('isSub',function(d){
+				return d.change <0;
+			})
+			*/
+		
 		cols.exit().remove();
 		
-	})
-			
+		d3.select(this).selectAll('span.cell').data(d.cellData)
+			.classed('isAdd',function(d){
+				console.log(d);
+				return d.change > 0;
+			})
+			.classed('isSub',function(d){
+				return d.change < 0;
+		})
+		 
+	})		
 }
+
+function drawSampleDelta(df, dt){
+	// df is old version.
+	var df2 = dt.apply(df);
+	drawSample(domMap['ng-sample-header'], names,
+			   domMap['ng-sample-value'], df2.as_matrix());
+	
+}
+
 
 function drawMatrixField(pop1, pop2){
 
@@ -294,7 +420,7 @@ function drawMatrixField(pop1, pop2){
 	var namesCol = jStat.transpose([pop1.header]);
 	
 	function quickDraw(className, mat, names, config){
-		drawMatrix(document.getElementsByClassName(className)[0], mat, names, config);
+		drawMatrix(domMap[className], mat, names, config);
 	}
 	
 	quickDraw('ng-matrix-names', namesCol, ['#']);
@@ -315,8 +441,8 @@ function drawSituation(pop, df){
 	
 	var names = df.header.map(function(s){return s.slice(0,5)});
 
-	drawSample(document.getElementsByClassName('ng-sample-header')[0], names,
-			   document.getElementsByClassName('ng-sample-value')[0], df.as_matrix());
+	drawSample(domMap['ng-sample-header'], names,
+			   domMap['ng-sample-value'], df.as_matrix());
 	
 }
 
@@ -327,6 +453,14 @@ function debug(){
 	pop = new Population(df);
 	df2 = pop.sample(100);
 	pop2 = new Population(df,df2,0.1);
+	
+	domMap = {};
+	['ng-matrix-names','ng-matrix-mu','ng-matrix-mu-change',
+	 'ng-matrix-variance','ng-matrix-variance-change','ng-matrix-correlation',
+	 'ng-matrix-correlation-change','ng-sample-header','ng-sample-value'].map(function(className){
+		 domMap[className] = document.getElementsByClassName(className)[0];
+	})
+
 	
 	canvas = document.getElementById("screen");
 	if(canvas!=null){
@@ -340,8 +474,38 @@ function debug(){
 	
 	drawMatrixField(pop,pop2);
 	
-	var names = df.header.map(function(s){return s.slice(0,5)});
+	names = df.header.map(function(s){return s.slice(0,5)});
 	//quickDraw('ng-sample', jStat.transpose(df2.as_matrix()), names, {'height':5});
-	drawSample(document.getElementsByClassName('ng-sample-header')[0], names,
-			   document.getElementsByClassName('ng-sample-value')[0], df2.as_matrix());
+	
+	var dt_matrix = df3.as_matrix().map(function(row,i){
+		return row.map(function(value,j){
+			var r = Math.random();
+			if(r<0.8){
+				return 0;
+			}
+			else if(r < 0.9){
+				return -1;
+			}
+			else{
+				return 1;
+			}
+		})
+	})
+	var isRemoved = jStat.arange(df2.size()).map(function(){
+		return Math.random() > 0.7 ? 1 : 0;
+	});
+	dt = DeltaTable.from_matrix(df.header, df.type, dt_matrix, isRemoved);
+	dt.values[dt.header[0]][0] = 1;
+	dt.values[dt.header[1]][0] = -1;
+	dt.values[dt.header[2]][0] = 0;
+	/*
+	drawSample(domMap['ng-sample-header'], names,
+			   domMap['ng-sample-value'], df2.as_matrix());
+	*/
+	drawSample(domMap['ng-sample-header'], names,
+			   domMap['ng-sample-value'], df2.as_matrix(), dt);
+
+	document.getElementsByClassName('debug')[0].onclick = function(){
+		drawSituation(pop, df3);
+	}
 }

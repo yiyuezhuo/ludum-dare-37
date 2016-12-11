@@ -63,3 +63,20 @@ function apply(mat, margin, func){
 		return jStat.transpose(mat).map(func);
 	}
 }
+
+function rank(l,cmp){
+	if(cmp === undefined){
+		cmp = function(l,r){
+			return l - r;
+		}
+	}
+	var ll = l.map(function(obj,i){
+		return [i,obj];
+	});
+	ll.sort(function(l,r){
+		return cmp(l[1],r[1]);
+	});
+	return ll.map(function(t){
+		return t[0];
+	})
+}

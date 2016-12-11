@@ -28,6 +28,9 @@ body{
 	width : 10%;
 	background-color : #ddd;
 	height : 100%;
+	display : flex;
+	flex-wrap : wrap;
+	flex-direction : column;
 }
 
 .ng-main{
