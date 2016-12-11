@@ -80,3 +80,24 @@ function rank(l,cmp){
 		return t[0];
 	})
 }
+
+function sortByIndex2(l,index){
+	// [-2,-1..],[1,0,..] -> -2 will move to index 1 location,-1 will move to index 0 location
+	var ll = l.map(function(obj,i){
+		return [index[i],obj];
+	});
+	return ll.sort(function(l,r){
+		return l[0] - r[0];
+	}).map(function(pair){
+		return pair[1];
+	});
+}
+
+function sortByIndex(l,index){
+	// [-2,-1..],[1,0,..]  -> index 1 location will store -1, index 0 location will store -2
+	var rl = []
+	l.forEach(function(obj,i){
+		rl[i] = l[index[i]];
+	});
+	return rl;
+}

@@ -1,4 +1,6 @@
-dataManager = {}
+dataManager = { 'jsonp'  : undefined,
+				'sample-dataframe' : undefined,
+				'sample-deltatable': undefined}
 
 function jsonp_call(d){
 	dataManager['jsonp'] = d;
@@ -113,6 +115,10 @@ DataFrame.prototype.copy = function(){
 	});
 	return df;
 }
+DataFrame.prototype.sortByIndex = function(index){
+	var mat = jStat.transpose(sortByIndex(jStat.transpose(this.as_matrix()),index));
+	return DataFrame.from_matrix(this.header, this.type, mat);
+}
 
 function DeltaTable(header, type, values, isRemoved){
 	
@@ -131,7 +137,7 @@ DeltaTable.from_matrix = function(header, type, mat, isRemoved){
 }
 DeltaTable.prototype.apply = function(df){
 	// only number modified, not remove
-	return DataFrame.from_matrix(df.header, df.type, jStat.add(df.as_matrix(), this.as_matrix()));
+	return DataFrane.from_matrix(df.header, df.type, jStat.add(df.as_matrix(), this.as_matrix()));
 }
 DeltaTable.prototype.applyWithRemoved = function(df){
 	// number modified, not remove
@@ -141,6 +147,11 @@ DeltaTable.prototype.applyWithRemoved = function(df){
 		return !that.isRemoved[i];
 	}));
 	return DataFrame.from_matrix(df.header, df.type, mat);
+}
+DeltaTable.prototype.sortByIndex = function(index){
+	var isRemoved = sortByIndex(this.isRemoved, index);
+	var mat = jStat.transpose(sortByIndex(jStat.transpose(this.as_matrix()),index))
+	return DeltaTable.from_matrix(this.header, this.type, mat, isRemoved);
 }
 
 
@@ -228,6 +239,7 @@ function format(obj){
 }
 
 function printMatrix(ctx, mat, left, top, width, height){
+	// print martix by canvas
 	left = left || 10;
 	top = top || 20;
 	width = width || 50;
@@ -283,9 +295,6 @@ function drawMatrix(dom, mat, names, config){
 }
 
 function drawSample(domHeader, header, domValue, value, dt, height){
-	// click header will sort the matrix, click record will kill this one.
-	// value is df.as_matrix result ((p,n) shape). It should be transposed before render it.
-	// dt is delta table, if it given, domValue is modified by dt before call this function.
 	var width = 100/jStat.rows(value);
 	height = height || 5;
 	
@@ -299,10 +308,13 @@ function drawSample(domHeader, header, domValue, value, dt, height){
 			.on('click',function(h){
 				v = jStat.transpose(value);
 				var idx = header.indexOf(h);
-				v.sort(function(left, right){
+				var cmp = function(left, right){
 					return right[idx] - left[idx];
-				})
-				drawSample(domHeader, header, domValue, jStat.transpose(v), height);
+				};
+				var rv = rank(v,cmp);
+				var _value = jStat.transpose(sortByIndex(v, rv));
+				var _dt = dt.sortByIndex(rv);
+				drawSample(domHeader, header, domValue, _value, _dt, height);
 			})
 	
 	var rowsData;
@@ -339,18 +351,8 @@ function drawSample(domHeader, header, domValue, value, dt, height){
 		.style('width','100%')
 		.style('height', height + '%')
 		.classed("matrix", true);
-		/*
-		.classed('isRemoved', function(rowData){
-			return rowData.isRemoved
-		})
-		*/
 	
 	rows.transition();
-		/*
-		.classed('isRemoved', function(rowData){
-			return rowData.isRemoved
-		});
-		*/
 	
 	rows.exit().remove();
 	
@@ -366,56 +368,155 @@ function drawSample(domHeader, header, domValue, value, dt, height){
 			.style('width', width + '%')
 			.style('height', '100%')
 			.text(function(d){
-				//console.log(d);
 				return format(d.value);
 			})
-			/*
-			.classed('isAdd',function(d){
-				return d.change >0;
-			})
-			.classed('isSub',function(d){
-				return d.change <0;
-			})
-			*/
 			
 		cols.transition()
 			.text(function(d){
 				return format(d.value);
 			})
-			/*
-			.classed('isAdd',function(d){
-				return d.change >0;
-			})
-			.classed('isSub',function(d){
-				return d.change <0;
-			})
-			*/
 		
 		cols.exit().remove();
 		
 		d3.select(this).selectAll('span.cell').data(d.cellData)
 			.classed('isAdd',function(d){
-				console.log(d);
+				//console.log(d);
 				return d.change > 0;
 			})
 			.classed('isSub',function(d){
 				return d.change < 0;
 		})
-		 
+		
 	})		
 }
 
-function drawSampleDelta(df, dt){
-	// df is old version.
-	var df2 = dt.apply(df);
-	drawSample(domMap['ng-sample-header'], names,
-			   domMap['ng-sample-value'], df2.as_matrix());
+
+
+function SampleViewer(domHeader, domValue, df, dt, config) {
+	this.domHeader = domHeader;
+	this.domValue = domValue;
+	this.df = df;
+	this.dt = dt;
+	this.config = config || {height : 5};
+}
+SampleViewer.prototype.update = function(){
+
+	var domHeader = this.domHeader,
+		domValue = this.domValue,
+		header = this.df.header,
+		value = this.df.as_matrix(),
+		dt = this.dt,
+		that = this,
+		height = this.config.height;
+		
+	// click header will sort the matrix, click record will kill this one.
+	// value is df.as_matrix result ((p,n) shape). It should be transposed before render it.
+	// dt is delta table, if it given, domValue is modified by dt before call this function.
+	
+	var width = 100/jStat.rows(value);
+	height = height || 5;
+	
+	value = jStat.copy(value);
+	
+	d3.select(domHeader).selectAll('span').data(header)
+		.enter().append('span')
+			.style('width', width + '%')
+			.style('height', height + '%')
+			.text(function(h){
+				return h.slice(0,5); // prevent the string is too long  
+			})
+			.on('click',function(h){
+				that.sortByHeader(h);
+				that.update();
+			})
+	
+	var rowsData;
+	if(!dt){
+		rowsData = jStat.transpose(value).map(function(matRow,i){
+			var cellData = matRow.map(function(matCell,j){
+				return {value: matCell, change:0};
+			})
+			return {isRemoved:false, cellData:cellData};
+		})
+	}
+	else{
+		var deltaMat = jStat.transpose(dt.as_matrix());
+		rowsData = jStat.transpose(value).map(function(matRow,i){
+			var removed = dt.isRemoved[i];
+			var cellData;
+			if(removed){ // not show change color
+				cellData = matRow.map(function(matCell,j){
+					return {value: matCell, change: 0};
+				})
+			}
+			else{
+				cellData = matRow.map(function(matCell,j){
+					return {value: matCell, change: deltaMat[i][j]};
+				})
+			}
+			return {isRemoved: removed, cellData:cellData};
+		})
+	}
+	
+	var rows = d3.select(domValue).selectAll('span.row').data(rowsData);
+	rows.enter().append('span').classed('row', true)
+		.style('width','100%')
+		.style('height', height + '%')
+		.classed("matrix", true);
+	rows.transition();
+	rows.exit().remove();
+	
+	d3.select(domValue).selectAll('span.row').data(rowsData).classed('isRemoved', function(rowData){
+		return rowData.isRemoved
+	});
+
+			
+	d3.select(domValue).selectAll('span.row').each(function(d){
+		var cols = d3.select(this).selectAll('span.cell').data(d.cellData)
+		
+		cols.enter().append('span').classed('cell', true)
+			.style('width', width + '%')
+			.style('height', '100%')
+			.text(function(d){
+				return format(d.value);
+			})
+		cols.transition()
+			.text(function(d){
+				return format(d.value);
+			})
+		cols.exit().remove();
+		
+		d3.select(this).selectAll('span.cell').data(d.cellData)
+			.classed('isAdd',function(d){
+				//console.log(d);
+				return d.change > 0;
+			})
+			.classed('isSub',function(d){
+				return d.change < 0;
+		})
+		
+	})		
+}
+SampleViewer.prototype.sortByHeader = function(h){
+	
+	var header = this.df.header;
+	
+	var v = jStat.transpose(this.df.as_matrix());
+	var idx = header.indexOf(h);
+	var cmp = function(left, right){
+		return right[idx] - left[idx];
+	};
+	var rv = rank(v,cmp);
+	this.df = this.df.sortByIndex(rv);
+	this.dt = this.dt.sortByIndex(rv);
 	
 }
 
 
-function drawMatrixField(pop1, pop2){
 
+/*
+function drawMatrixField(pop1, pop2){
+	// pop can be df dt ,but dt is meanless
 	var names = pop1.header.map(function(s){return s.slice(0,5)});
 	var namesCol = jStat.transpose([pop1.header]);
 	
@@ -432,7 +533,59 @@ function drawMatrixField(pop1, pop2){
 	quickDraw('ng-matrix-correlation-change', jStat.subtract(pop2.cor(), pop1.cor()), names);
 	
 }
+*/
 
+function MatrixViewer(domMap, poplike1, poplike2){
+	// This class is linked too more element. I use domMap to direct access them.
+	this.domMap = domMap;
+	this.pop1 = poplike1;
+	this.pop2 = pop2 || poplike1;
+}
+MatrixViewer.prototype.update = function(){
+	var pop1 = this.pop1,
+		pop2 = this.pop2,
+		domMap = this.domMap;
+		
+	var names = pop1.header.map(function(s){return s.slice(0,5)});
+	var namesCol = jStat.transpose([pop1.header]);
+	
+	function quickDraw(className, mat, names, config){
+		drawMatrix(domMap[className], mat, names, config);
+	}
+	
+	quickDraw('ng-matrix-names', namesCol, ['#']);
+	quickDraw('ng-matrix-mu', jStat.transpose([pop1.mean()]), ['Expect']);
+	quickDraw('ng-matrix-mu-change',jStat.transpose([jStat.subtract(pop2.mean(),pop1.mean())]), ['dE']);
+	quickDraw('ng-matrix-variance', jStat.diag(pop1.cov()), ['Variance']);
+	quickDraw('ng-matrix-variance-change', jStat.diag(jStat.subtract(pop2.cov(),pop1.cov())), ['dV']);
+	quickDraw('ng-matrix-correlation', pop1.cor(), names);
+	quickDraw('ng-matrix-correlation-change', jStat.subtract(pop2.cor(), pop1.cor()), names);
+
+}
+
+function SituationViewer(pop, df, component){
+	this.pop = pop;
+	this.df = df;
+	this.matrixViewer = component.matrixViewer;
+	this.sampleViewer = component.sampleViewer;
+}
+SituationViewer.prototype.update = function(dt){
+	var pop = this.pop;
+	var df = this.df;
+	
+	var pop2 = new Population(pop, dt.applyWithRemoved(df), 0.1);
+	//drawMatrixField(pop, pop2);
+	this.matrixViewer.pop1 = pop;
+	this.matrixViewer.pop2 = pop2;
+	this.matrixViewer.update();
+	
+	//var names = df.header.map(function(s){return s.slice(0,5)});
+	this.sampleViewer.df = df;
+	this.sampleViewer.dt = dt;
+	this.sampleViewer.update();
+}
+
+/*
 function drawSituation(pop, df){
 	// df is sampled by pop or modified by one sampled by pop.
 	// It give player  a view what is going on. And player choose a direction to next turn.
@@ -445,6 +598,7 @@ function drawSituation(pop, df){
 			   domMap['ng-sample-value'], df.as_matrix());
 	
 }
+*/
 
 // debug field
 function debug(){
@@ -453,6 +607,9 @@ function debug(){
 	pop = new Population(df);
 	df2 = pop.sample(100);
 	pop2 = new Population(df,df2,0.1);
+	df3 = pop.sample(100);
+	pop3 = new Population(df,df2,0.2)
+
 	
 	domMap = {};
 	['ng-matrix-names','ng-matrix-mu','ng-matrix-mu-change',
@@ -461,18 +618,17 @@ function debug(){
 		 domMap[className] = document.getElementsByClassName(className)[0];
 	})
 
-	
+	/*
 	canvas = document.getElementById("screen");
 	if(canvas!=null){
 		ctx = canvas.getContext("2d");
 		printMatrix(ctx,pop.cov());
 	}
-	
-	df3 = pop.sample(200);
-	pop3 = new Population(df,df2,0.2)
+	*/
 	
 	
-	drawMatrixField(pop,pop2);
+	
+	//drawMatrixField(pop,pop2);
 	
 	names = df.header.map(function(s){return s.slice(0,5)});
 	//quickDraw('ng-sample', jStat.transpose(df2.as_matrix()), names, {'height':5});
@@ -491,21 +647,32 @@ function debug(){
 			}
 		})
 	})
-	var isRemoved = jStat.arange(df2.size()).map(function(){
+	var isRemoved = jStat.arange(df3.size()).map(function(){
 		return Math.random() > 0.7 ? 1 : 0;
 	});
 	dt = DeltaTable.from_matrix(df.header, df.type, dt_matrix, isRemoved);
 	dt.values[dt.header[0]][0] = 1;
 	dt.values[dt.header[1]][0] = -1;
 	dt.values[dt.header[2]][0] = 0;
+	
+	//sampleViewer = new SampleViewer(domMap['ng-sample-header'], domMap['ng-sample-value'], df3, dt);
+	//matrixViewer = new MatrixViewer(domMap, pop, pop3);
+	sampleViewer = new SampleViewer(domMap['ng-sample-header'], domMap['ng-sample-value']);
+	matrixViewer = new MatrixViewer(domMap);
+	situationViewer =  new SituationViewer( pop,df2,
+											{sampleViewer : sampleViewer,
+											 matrixViewer : matrixViewer});
+	situationViewer.update(dt);
+	
+	//sampleViewer.update();
+
 	/*
 	drawSample(domMap['ng-sample-header'], names,
-			   domMap['ng-sample-value'], df2.as_matrix());
+			   domMap['ng-sample-value'], df3.as_matrix(), dt);
 	*/
-	drawSample(domMap['ng-sample-header'], names,
-			   domMap['ng-sample-value'], df2.as_matrix(), dt);
 
 	document.getElementsByClassName('debug')[0].onclick = function(){
-		drawSituation(pop, df3);
+		situationViewer.df = df3;
+		situationViewer.update(dt);
 	}
 }
