@@ -39,3 +39,12 @@ a.button {
 .isSub{
 	background-color : #f99;
 }
+
+.option{
+	width : 50%;
+	background-color : #eed;
+}
+
+.option > span{
+	padding : 6px;
+}

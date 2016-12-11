@@ -37,6 +37,42 @@ body{
 	width : 60%;
 	background-color : #eee;
 	height : 100%;
+	display : flex;
+	flex-wrap : wrap;
+	flex-direction : column;
+	font-family : "Consolas", "Bitstream Vera Sans Mono", "Courier New", Courier, monospace !important;
+}
+
+.ng-main-title{
+	height : 8%;
+	background-color : #dde;
+	text-align: center;
+	font-family : "Consolas", "Bitstream Vera Sans Mono", "Courier New", Courier, monospace !important;
+	font-size : 25px;
+}
+
+.ng-main-image{
+	height : 35%;
+	align-self : center;
+}
+.ng-main-content{
+	height : 35%;
+	background-color : #eed;
+	font-family : "Consolas", "Bitstream Vera Sans Mono", "Courier New", Courier, monospace !important;
+}
+.ng-main-option{
+	height : 22%;
+	background-color : #eed;
+	display : flex;
+	flex-wrap : wrap;
+}
+
+.ng-main-title > span{
+	padding : 2px;
+}
+
+.ng-main-content > span{
+	padding:4px;
 }
 
 .ng-sample{

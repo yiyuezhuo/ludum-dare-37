@@ -1,6 +1,4 @@
-dataManager = { 'jsonp'  : undefined,
-				'sample-dataframe' : undefined,
-				'sample-deltatable': undefined}
+dataManager = { 'jsonp'  : undefined}
 
 function jsonp_call(d){
 	dataManager['jsonp'] = d;
@@ -135,6 +133,20 @@ DeltaTable.from_matrix = function(header, type, mat, isRemoved){
 	dt.isRemoved = isRemoved;
 	return dt;
 }
+DeltaTable.from_dataFrame = function(df){
+	// construct a "unchanged" dt along with the df.
+	var dt =  new DeltaTable(df.header, df.type);
+	var alongArr = jStat.arange(df.size());
+	dt.isRemoved = alongArr.map(function(){
+		return 0;
+	})
+	dt.header.forEach(function(h){
+		dt.values[h] = alongArr.map(function(){
+			return 0;
+		});
+	});
+	return dt;
+}
 DeltaTable.prototype.apply = function(df){
 	// only number modified, not remove
 	return DataFrane.from_matrix(df.header, df.type, jStat.add(df.as_matrix(), this.as_matrix()));
@@ -200,10 +212,10 @@ Population.prototype.sample = function(size){
 
 function streesNumber(n){
 
-	if(Math.abs(n)<1e-5){
+	if(Math.abs(n) < 1e-5){
 		return '0';
 	}
-	if(Math.abs(1-n)<1e-5){
+	if(Math.abs(1-n) < 1e-5){
 		return '1';
 	}
 
@@ -293,103 +305,6 @@ function drawMatrix(dom, mat, names, config){
 	cells.exit().remove();
 		
 }
-
-function drawSample(domHeader, header, domValue, value, dt, height){
-	var width = 100/jStat.rows(value);
-	height = height || 5;
-	
-	value = jStat.copy(value);
-	
-	d3.select(domHeader).selectAll('span').data(header)
-		.enter().append('span')
-			.style('width', width + '%')
-			.style('height', height + '%')
-			.text(function(h){return h;})
-			.on('click',function(h){
-				v = jStat.transpose(value);
-				var idx = header.indexOf(h);
-				var cmp = function(left, right){
-					return right[idx] - left[idx];
-				};
-				var rv = rank(v,cmp);
-				var _value = jStat.transpose(sortByIndex(v, rv));
-				var _dt = dt.sortByIndex(rv);
-				drawSample(domHeader, header, domValue, _value, _dt, height);
-			})
-	
-	var rowsData;
-	if(!dt){
-		rowsData = jStat.transpose(value).map(function(matRow,i){
-			var cellData = matRow.map(function(matCell,j){
-				return {value: matCell, change:0};
-			})
-			return {isRemoved:false, cellData:cellData};
-		})
-	}
-	else{
-		var deltaMat = jStat.transpose(dt.as_matrix());
-		rowsData = jStat.transpose(value).map(function(matRow,i){
-			var removed = dt.isRemoved[i];
-			var cellData;
-			if(removed){ // not show change color
-				cellData = matRow.map(function(matCell,j){
-					return {value: matCell, change: 0};
-				})
-			}
-			else{
-				cellData = matRow.map(function(matCell,j){
-					return {value: matCell, change: deltaMat[i][j]};
-				})
-			}
-			return {isRemoved: removed, cellData:cellData};
-		})
-	}
-	
-	var rows = d3.select(domValue).selectAll('span.row').data(rowsData);
-	
-	rows.enter().append('span').classed('row', true)
-		.style('width','100%')
-		.style('height', height + '%')
-		.classed("matrix", true);
-	
-	rows.transition();
-	
-	rows.exit().remove();
-	
-	d3.select(domValue).selectAll('span.row').data(rowsData).classed('isRemoved', function(rowData){
-		return rowData.isRemoved
-	});
-
-			
-	d3.select(domValue).selectAll('span.row').each(function(d){
-		var cols = d3.select(this).selectAll('span.cell').data(d.cellData)
-		
-		cols.enter().append('span').classed('cell', true)
-			.style('width', width + '%')
-			.style('height', '100%')
-			.text(function(d){
-				return format(d.value);
-			})
-			
-		cols.transition()
-			.text(function(d){
-				return format(d.value);
-			})
-		
-		cols.exit().remove();
-		
-		d3.select(this).selectAll('span.cell').data(d.cellData)
-			.classed('isAdd',function(d){
-				//console.log(d);
-				return d.change > 0;
-			})
-			.classed('isSub',function(d){
-				return d.change < 0;
-		})
-		
-	})		
-}
-
 
 
 function SampleViewer(domHeader, domValue, df, dt, config) {
@@ -488,7 +403,6 @@ SampleViewer.prototype.update = function(){
 		
 		d3.select(this).selectAll('span.cell').data(d.cellData)
 			.classed('isAdd',function(d){
-				//console.log(d);
 				return d.change > 0;
 			})
 			.classed('isSub',function(d){
@@ -514,26 +428,6 @@ SampleViewer.prototype.sortByHeader = function(h){
 
 
 
-/*
-function drawMatrixField(pop1, pop2){
-	// pop can be df dt ,but dt is meanless
-	var names = pop1.header.map(function(s){return s.slice(0,5)});
-	var namesCol = jStat.transpose([pop1.header]);
-	
-	function quickDraw(className, mat, names, config){
-		drawMatrix(domMap[className], mat, names, config);
-	}
-	
-	quickDraw('ng-matrix-names', namesCol, ['#']);
-	quickDraw('ng-matrix-mu', jStat.transpose([pop1.mean()]), ['Expect']);
-	quickDraw('ng-matrix-mu-change',jStat.transpose([jStat.subtract(pop2.mean(),pop1.mean())]), ['dE']);
-	quickDraw('ng-matrix-variance', jStat.diag(pop1.cov()), ['Variance']);
-	quickDraw('ng-matrix-variance-change', jStat.diag(jStat.subtract(pop2.cov(),pop1.cov())), ['dV']);
-	quickDraw('ng-matrix-correlation', pop1.cor(), names);
-	quickDraw('ng-matrix-correlation-change', jStat.subtract(pop2.cor(), pop1.cor()), names);
-	
-}
-*/
 
 function MatrixViewer(domMap, poplike1, poplike2){
 	// This class is linked too more element. I use domMap to direct access them.
@@ -563,42 +457,71 @@ MatrixViewer.prototype.update = function(){
 
 }
 
-function SituationViewer(pop, df, component){
-	this.pop = pop;
-	this.df = df;
+function SituationViewer(component,pop, df, dt){
 	this.matrixViewer = component.matrixViewer;
 	this.sampleViewer = component.sampleViewer;
+
+	this.pop = pop;
+	this.df = df;
+	this.dt = dt;
 }
-SituationViewer.prototype.update = function(dt){
+SituationViewer.prototype.update = function(){
+	// All `update` method should be implemented non parameter. 
+	// The equivalence behaviour should be done by state write.
 	var pop = this.pop;
 	var df = this.df;
+	var dt = this.dt;
 	
 	var pop2 = new Population(pop, dt.applyWithRemoved(df), 0.1);
-	//drawMatrixField(pop, pop2);
 	this.matrixViewer.pop1 = pop;
 	this.matrixViewer.pop2 = pop2;
 	this.matrixViewer.update();
 	
-	//var names = df.header.map(function(s){return s.slice(0,5)});
 	this.sampleViewer.df = df;
 	this.sampleViewer.dt = dt;
 	this.sampleViewer.update();
 }
 
-/*
-function drawSituation(pop, df){
-	// df is sampled by pop or modified by one sampled by pop.
-	// It give player  a view what is going on. And player choose a direction to next turn.
-	var pop2 = new Population(pop, df, 0.1);
-	drawMatrixField(pop, pop2);
+function EventChainViewer(domMap, title, image, content, option){
+	// lower class EventChainViewer don't need know event meaning.
+	this.domMap = domMap;
+	this.title = title;
+	this.image = image;
+	this.content = content;
+	this.option = option;
+}
+EventChainViewer.prototype.update = function(){
+	d3.select(this.domMap['ng-main-title']).select('span').text(this.title);
+	d3.select(this.domMap['ng-main-image']).attr('src',this.image);
+	d3.select(this.domMap['ng-main-content']).select('span').text(this.content);
 	
-	var names = df.header.map(function(s){return s.slice(0,5)});
-
-	drawSample(domMap['ng-sample-header'], names,
-			   domMap['ng-sample-value'], df.as_matrix());
+	// option ~ [{id:0,value:"Shout me!"},...,]
+	var optionSpan = d3.select(this.domMap['ng-main-option']).selectAll('span.option').data(this.option);
+	optionSpan.enter().append('span')
+		.classed('option',true)
+		.append('span')
+		.text(function(d){
+			return d.value;
+		})
+		.on(function(d){
+			// TODO : please implement event mechanism
+		})
+	optionSpan.transition()
+		.select('span')
+		.text(function(d){
+			return d.value;
+		})
+	optionSpan.exit().remove();
+	
 	
 }
-*/
+
+StateManager = function(pop,df,dt){
+	this.pop = pop;
+	this.df = df;
+	this.dt = dt;
+}
+
 
 // debug field
 function debug(){
@@ -614,24 +537,13 @@ function debug(){
 	domMap = {};
 	['ng-matrix-names','ng-matrix-mu','ng-matrix-mu-change',
 	 'ng-matrix-variance','ng-matrix-variance-change','ng-matrix-correlation',
-	 'ng-matrix-correlation-change','ng-sample-header','ng-sample-value'].map(function(className){
+	 'ng-matrix-correlation-change','ng-sample-header','ng-sample-value',
+	 'ng-main-title','ng-main-image','ng-main-content','ng-main-option'].map(function(className){
 		 domMap[className] = document.getElementsByClassName(className)[0];
 	})
 
-	/*
-	canvas = document.getElementById("screen");
-	if(canvas!=null){
-		ctx = canvas.getContext("2d");
-		printMatrix(ctx,pop.cov());
-	}
-	*/
-	
-	
-	
-	//drawMatrixField(pop,pop2);
 	
 	names = df.header.map(function(s){return s.slice(0,5)});
-	//quickDraw('ng-sample', jStat.transpose(df2.as_matrix()), names, {'height':5});
 	
 	var dt_matrix = df3.as_matrix().map(function(row,i){
 		return row.map(function(value,j){
@@ -640,39 +552,39 @@ function debug(){
 				return 0;
 			}
 			else if(r < 0.9){
-				return -1;
+				return -0.1;
 			}
 			else{
-				return 1;
+				return 0.1;
 			}
 		})
 	})
 	var isRemoved = jStat.arange(df3.size()).map(function(){
-		return Math.random() > 0.7 ? 1 : 0;
+		return Math.random() > 0.9 ? 1 : 0;
 	});
 	dt = DeltaTable.from_matrix(df.header, df.type, dt_matrix, isRemoved);
-	dt.values[dt.header[0]][0] = 1;
-	dt.values[dt.header[1]][0] = -1;
+	dt.values[dt.header[0]][0] = 0.1;
+	dt.values[dt.header[1]][0] = -0.1;
 	dt.values[dt.header[2]][0] = 0;
 	
-	//sampleViewer = new SampleViewer(domMap['ng-sample-header'], domMap['ng-sample-value'], df3, dt);
-	//matrixViewer = new MatrixViewer(domMap, pop, pop3);
 	sampleViewer = new SampleViewer(domMap['ng-sample-header'], domMap['ng-sample-value']);
 	matrixViewer = new MatrixViewer(domMap);
-	situationViewer =  new SituationViewer( pop,df2,
-											{sampleViewer : sampleViewer,
-											 matrixViewer : matrixViewer});
+	situationViewer =  new SituationViewer( {sampleViewer : sampleViewer,
+											 matrixViewer : matrixViewer},
+											 pop, df2, dt);
 	situationViewer.update(dt);
 	
-	//sampleViewer.update();
-
-	/*
-	drawSample(domMap['ng-sample-header'], names,
-			   domMap['ng-sample-value'], df3.as_matrix(), dt);
-	*/
+	eventChainViewer = new EventChainViewer(domMap);
+	eventChainViewer.title = 'Mutiple normal distribution game.';
+	eventChainViewer.image = 'normal_pdf.png';
+	eventChainViewer.content = 'Amazing! The mutiple norm distribution can make a game. Are you kidding me?';
+	eventChainViewer.option = [ {id:0,value:"Yes, man."},
+								{id:1,value:"Fuck you, it's grim model."},
+								{id:2,value:"Sorry I can't get it."},];
+	eventChainViewer.update();
 
 	document.getElementsByClassName('debug')[0].onclick = function(){
 		situationViewer.df = df3;
-		situationViewer.update(dt);
+		situationViewer.update();
 	}
 }
