@@ -147,10 +147,12 @@ function setup(){
 	//stateManager.rollEvent();
 	//stateManager.update();
 	
+	/*
 	document.getElementsByClassName('debug')[0].onclick = function(){
 		stateManager.df = df3;
 		stateManager.update();
 	}
+	*/
 	
 	document.getElementsByClassName('Kill')[0].onclick = function(){
 		eventManager['killClick'].trigger();
