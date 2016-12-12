@@ -54,6 +54,7 @@ body{
 .ng-main-image{
 	height : 35%;
 	align-self : center;
+	max-width : 100%;
 }
 .ng-main-content{
 	height : 35%;

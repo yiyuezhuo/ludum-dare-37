@@ -11,7 +11,7 @@ function loadScript(newJS){
 		document.getElementsByTagName("html")[0].appendChild(scriptObj);
 }
 
-loadScript("mao.js");
+loadScript("feudal.js");
 
 
 var eventManager = (function(){
@@ -164,7 +164,7 @@ DeltaTable.from_matrix = function(header, type, mat, isRemoved){
 	dt.header.forEach(function(h,i){
 		dt.values[h] = mat[i];
 	})
-	dt.isRemoved = isRemoved;
+	dt.isRemoved = isRemoved || 0;
 	return dt;
 }
 DeltaTable.from_dataFrame = function(df){
@@ -181,9 +181,27 @@ DeltaTable.from_dataFrame = function(df){
 	});
 	return dt;
 }
+DeltaTable.from_map = function(df, map){
+	// map: {wealthy: 1, power:0,knowledge:0.5} -> {delta:{wealthy:0,power:0,knowledge:0.1},isRemoved:0}
+	var dt = new DeltaTable(df.header, df.type);
+	dt.isRemoved = [];
+	var alongArr = jStat.arange(df.size());
+	alongArr.forEach(function(i){
+		var record = {};
+		dt.header.forEach(function(h){
+			record[h] = df.values[h][i];
+		});
+		var res = map(record);
+		dt.isRemoved[i] = res.isRemoved;
+		dt.header.forEach(function(h){
+			dt.values[h][i] = res.delta[h] || 0;
+		})
+	})
+	return dt;
+}
 DeltaTable.prototype.apply = function(df){
 	// only number modified, not remove
-	return DataFrane.from_matrix(df.header, df.type, jStat.add(df.as_matrix(), this.as_matrix()));
+	return DataFrame.from_matrix(df.header, df.type, jStat.add(df.as_matrix(), this.as_matrix()));
 }
 DeltaTable.prototype.applyWithRemoved = function(df){
 	// number modified, not remove
@@ -353,14 +371,14 @@ SampleViewer.prototype.update = function(){
 	var domHeader = this.domHeader,
 		domValue = this.domValue,
 		header = this.df.header,
-		value = this.df.as_matrix(),
 		dt = this.dt,
+		value = dt.apply(this.df).as_matrix(),
 		that = this,
 		height = this.config.height;
 		
 	// click header will sort the matrix, click record will kill this one.
 	// value is df.as_matrix result ((p,n) shape). It should be transposed before render it.
-	// dt is delta table, if it given, domValue is modified by dt before call this function.
+	// dt is delta table, if it given, domValue be modified by dt in this function.
 	
 	var width = 100/jStat.rows(value);
 	height = height || 5;
@@ -386,7 +404,7 @@ SampleViewer.prototype.update = function(){
 			var cellData = matRow.map(function(matCell,j){
 				return {value: matCell, change:0};
 			})
-			return {isRemoved:false, cellData:cellData, rowId : i};
+			return {isRemoved:0, cellData:cellData, rowId : i};
 		})
 	}
 	else{
@@ -420,7 +438,7 @@ SampleViewer.prototype.update = function(){
 	rows.exit().remove();
 	
 	d3.select(domValue).selectAll('span.row').data(rowsData).classed('isRemoved', function(rowData){
-		return rowData.isRemoved
+		return rowData.isRemoved;
 	});
 
 			
@@ -529,7 +547,8 @@ EventChainViewer.prototype.update = function(){
 		.text(function(d){
 			return d.value;
 		})
-		.on(function(d){
+		.on('click', function(d){
+			//console.log('click',d);
 			eventManager['clickOption'].trigger(d.id);
 		})
 	optionSpan.transition()
@@ -560,6 +579,10 @@ function StateManager(config){
 	
 	this.size = config.size || 100; // sample size
 	this.speed = config.speed || 0.1; // pop change speed
+	
+	this.eventList = config.eventList || [];
+	this.eventResidual = this.eventList.slice();
+	this.effectList = undefined;
 	
 	this.eventChainViewer = config.eventChainViewer;
 	this.situationViewer = config.situationViewer;
@@ -600,9 +623,49 @@ StateManager.prototype.sortByHeader = function(h){
 	this.dt = this.dt.sortByIndex(rv);
 	
 }
+StateManager.prototype.rollEvent = function(){
+	// run until a event match condition or eventResidual is exhauseted
+	var testEvent;
+	while(this.eventResidual.length > 0){
+		testEvent = this.eventResidual.shift();
+		if(testEvent.cond.event(this.df)){
+			break;
+		}
+		testEvent = undefined;
+	}
+	
+	this.adaptEvent(testEvent);
+}
+StateManager.prototype.adaptEvent = function(rawEvent){
+	// rawEvent will remove some condition option that not match condition and transform to with-id object form.
+	var that = this;
+	
+	if(rawEvent === undefined){
+		this.option = [];
+		this.content = '';
+		this.title = '';
+		this.image = '';
+		
+		this.effectList = undefined;
+		return;
+	}
+	
+	this.option = rawEvent.desc.option.map(function(value,i){
+		return {id: i, value: value};
+	}).filter(function(value, i){
+		return rawEvent.cond.option[i](that.df);
+	});
+	this.content = rawEvent.desc.content;
+	this.title = rawEvent.desc.title;
+	this.image = rawEvent.desc.image;
+	
+	this.effectList = rawEvent.effect;
+}
 StateManager.prototype.clickOption = function(id){
 	// id is option id
+	this.dt = this.effectList[id](this.df);
 	
+	this.update();
 }
 StateManager.prototype.sampleClick = function(rowId){
 	// rowId is row id of jStat.transpose(df.as_matrix()) 
@@ -619,13 +682,16 @@ StateManager.prototype.sampleSort = function(h){
 StateManager.prototype.killClick = function(){
 	this.df = this.dt.applyWithRemoved(this.df);
 	this.dt = DeltaTable.from_dataFrame(this.df);
-	this.pop = new Population(this.pop, this.df, this.speed);
+	//this.pop = new Population(this.pop, this.df, this.speed); // If compute it will reduce speed effect
 	this.update();
 }
 StateManager.prototype.nextAge = function(){
+	this.pop = new Population(this.pop, this.df, this.speed);
 	this.df = this.pop.sample(this.size);
 	this.dt = DeltaTable.from_dataFrame(this.df);
-	this.pop = new Population(this.pop, this.df, this.speed);
+	
+	this.eventResidual = this.eventList.slice();
+	
 	this.update();
 }
 
@@ -652,6 +718,7 @@ function debug(){
 	
 	names = df.header.map(function(s){return s.slice(0,5)});
 	
+	/*
 	var dt_matrix = df3.as_matrix().map(function(row,i){
 		return row.map(function(value,j){
 			var r = Math.random();
@@ -673,7 +740,7 @@ function debug(){
 	dt.values[dt.header[0]][0] = 0.1;
 	dt.values[dt.header[1]][0] = -0.1;
 	dt.values[dt.header[2]][0] = 0;
-	
+	*/
 	
 	sampleViewer = new SampleViewer(domMap['ng-sample-header'], domMap['ng-sample-value']);
 	matrixViewer = new MatrixViewer(domMap);
@@ -682,26 +749,66 @@ function debug(){
 	
 	eventChainViewer = new EventChainViewer(domMap);
 	
+	/*
 	var title = 'Mutiple normal distribution game.';
 	var image = 'normal_pdf.png';
 	var content = 'Amazing! The mutiple norm distribution can make a game. Are you kidding me?';
 	var option = [  {id:0,value:"Yes, man."},
 					{id:1,value:"Fuck you, it's grim model."},
 					{id:2,value:"Sorry I can't get it."}];
+	*/
+					
+	classFighter = {
+		desc:{
+			title : 'class fight',
+			image : 'class_fight.png',
+			content : 'The humble reactionist want to build communism in our great earth. What do you want to do?',
+			option : ["Purge communist",
+					  "Use law",
+					  "Wealth relocate"]
+		},
+		cond: {
+			event : function(df){return true;},
+			option : [
+				function(df){return true;},
+				function(df){return true},
+				function(df){return true}
+			]
+		},
+		effect: [
+			function(df){
+				return DeltaTable.from_map(df, function(record){
+					return {delta: {}, isRemoved: record.wealthy <0 ? 1 : 0};
+				});
+			},
+			function(df){
+				return DeltaTable.from_map(df, function(record){
+					return {delta: {wealthy:record.wealthy < 0 ? -0.2 : 0.2 }, isRemoved: 0};
+				});
+			},
+			function(df){
+				return DeltaTable.from_map(df, function(record){
+					return {delta: {wealthy:record.wealthy < 0 ? 0.2 : -0.2 }, isRemoved: 0};
+				});
+			}
+		]
+	}
 
 	
 	stateManager =  new StateManager({
 		pop : pop,
 		df : df2,
-		dt : dt,
-		title : title,
-		image : image,
-		content : content,
-		option : option,
+		dt : DeltaTable.from_dataFrame(df2),
+		//title : title,
+		//image : image,
+		//content : content,
+		//option : option,
+		eventList : [classFighter],
 		situationViewer : situationViewer,
 		eventChainViewer : eventChainViewer
 	});
 	
+	stateManager.rollEvent();
 	stateManager.update();
 	
 	document.getElementsByClassName('debug')[0].onclick = function(){
@@ -716,6 +823,8 @@ function debug(){
 	document.getElementsByClassName('nextAge')[0].onclick = function(){
 		eventManager['nextAge'].trigger();
 	}
+	
+
 
 
 }
