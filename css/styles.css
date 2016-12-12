@@ -48,3 +48,12 @@ a.button {
 .option > span{
 	padding : 6px;
 }
+
+.tip{
+  font-family : "Consolas", "Bitstream Vera Sans Mono", "Courier New", Courier, monospace !important;
+  padding:4px;
+}
+
+.hidden{
+	display : none;
+}

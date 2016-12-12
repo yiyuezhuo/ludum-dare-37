@@ -5,23 +5,48 @@
 		<title>Mutiple normal distribution simulation game</title>
 		<!-- by yiyuezhuo -->
 
-		<link rel="stylesheet" type="text/css" href="styles.css"/>
-		<link rel="stylesheet" type="text/css" href="layout.css"/>
+		<link rel="stylesheet" type="text/css" href="css/styles.css"/>
+		<link rel="stylesheet" type="text/css" href="css/layout.css"/>
 
 		
-		<script src="jstat.js"></script>
-		<script src="jstatR.js"></script>
-		<script src="d3.js"></script>
-		<script src="logic.js"></script>
+		<script src="js/jstat/jstat.js"></script>
+		<script src="js/jstatR.js"></script>
+		<script src="js/d3/d3.js"></script>
+		<script src="js/utils.js"></script>
+		<script src="js/logic.js"></script>
+		<script src="js/view.js"></script>
+		<script src="js/events.js"></script>
+		<script src="js/setup.js"></script>
 	</head>
 	<body>
 		<div class="ng">
 			<div class="ng-top">
 				<span class="ng-left">
-					<a class="button Kill">Kill</a>
-					<a class="button nextAge">Next age</a>
+					
+					<a class="button Kill state-sensitive state-killing">Kill</a>
+					<a class="button nextAge state-sensitive state-killing state-waitResample">Next age</a>
 					<a class="button">Manual</a>
 					<a class="button debug">Debug</a>
+					<a class="button cancel state-sensitive state-choosingOption">cancel</a>
+					<span class="ng-left-kill state-sensitive state-killing">
+						kill:<span class="ng-left-killing"></span>/<span class="ng-left-killLimit"></span>
+					</span>
+					
+					<span class="tip state-sensitive state-waitChooseOption">
+					You can click a option to see the effect.
+					</span>
+					<span class="tip state-sensitive state-choosingOption">
+					You can reclick a option to apply the effect. Or cancel the select,or reselect other option.
+					</span>
+					<span class="tip state-sensitive state-killing">
+					You can click right sample box row to see effect if you kill them.<br><br>
+					Next age can skip the step.
+					</span>
+					<span class="tip state-sensitive state-waitResample">
+					Next age will release residual people to run the world. And late, sample new one.
+					</span>
+					
+
 				</span>
 				<span class="ng-main"><!-- decide story view -->
 					<!-- ridiculous, flex box need rest one span to support padding -->

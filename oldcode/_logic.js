@@ -42,12 +42,13 @@ var eventManager = (function(){
 		  sampleClick : event(),
 		  sampleSort : event(),
 		  killClick : event(),
-		  nextAge : event()};
+		  nextAge : event(),
+		  cancelOption : event()};
 
 }());
 
 
-var DataFrame = function(header, type, values){
+function DataFrame(header, type, values){
 	this.header = header;
 	this.type = type;
 	if(values != undefined){
@@ -302,6 +303,7 @@ function format(obj){
 	return formatNumber(obj);
 }
 
+/*
 function printMatrix(ctx, mat, left, top, width, height){
 	// print martix by canvas
 	left = left || 10;
@@ -319,6 +321,7 @@ function printMatrix(ctx, mat, left, top, width, height){
 		}
 	}
 }
+*/
 
 function drawMatrix(dom, mat, names, config){
 	var m = jStat.rows(mat), n = jStat.cols(mat);
@@ -558,7 +561,16 @@ EventChainViewer.prototype.update = function(){
 		})
 	optionSpan.exit().remove();
 	
-	
+}
+
+function KillingViewer(domMap, killLimit, killing){
+	this.domMap = domMap;
+	this.killLimit = killLimit;
+	this.killing = killing;
+}
+KillingViewer.prototype.update = function(){
+	d3.select(this.domMap['ng-left-killing']).text(this.killing);
+	d3.select(this.domMap['ng-left-killLimit']).text(this.killLimit);
 }
 
 function StateManager(config){
@@ -584,14 +596,25 @@ function StateManager(config){
 	this.eventResidual = this.eventList.slice();
 	this.effectList = undefined;
 	
+	
+	this.killLimit = 5;
+	this.killing = 0;
+	
 	this.eventChainViewer = config.eventChainViewer;
 	this.situationViewer = config.situationViewer;
+	this.killingViewer = config.killingViewer;
 		
 	eventManager['clickOption'].register(this.clickOption.bind(this));
 	eventManager['sampleClick'].register(this.sampleClick.bind(this));
 	eventManager['sampleSort'].register(this.sampleSort.bind(this));
 	eventManager['killClick'].register(this.killClick.bind(this));
 	eventManager['nextAge'].register(this.nextAge.bind(this));
+	eventManager['cancelOption'].register(this.cancelOption.bind(this));
+	
+	this.state = undefined; //['waitChooseOption','choosingOption,killing,waitResample']
+	//this.stateGoto('waitChooseOption');
+	this.rollEvent();
+	this.selectOptionId = undefined;
 }
 StateManager.prototype.update = function(){
 	this.situationViewer.pop = this.pop;
@@ -608,6 +631,11 @@ StateManager.prototype.update = function(){
 	this.eventChainViewer.option = this.option;
 
 	this.eventChainViewer.update();
+	
+	this.killingViewer.killing = this.killing;
+	this.killingViewer.killLimit = this.killLimit;
+	this.killingViewer.update();
+	
 }
 StateManager.prototype.sortByHeader = function(h){
 	
@@ -634,7 +662,14 @@ StateManager.prototype.rollEvent = function(){
 		testEvent = undefined;
 	}
 	
-	this.adaptEvent(testEvent);
+	if(testEvent){
+		this.stateGoto('waitChooseOption');
+	}
+	else{
+		this.stateGoto('killing');
+	}
+	
+	this.adaptEvent(testEvent); 
 }
 StateManager.prototype.adaptEvent = function(rawEvent){
 	// rawEvent will remove some condition option that not match condition and transform to with-id object form.
@@ -647,6 +682,7 @@ StateManager.prototype.adaptEvent = function(rawEvent){
 		this.image = '';
 		
 		this.effectList = undefined;
+		this.update();
 		return;
 	}
 	
@@ -660,19 +696,56 @@ StateManager.prototype.adaptEvent = function(rawEvent){
 	this.image = rawEvent.desc.image;
 	
 	this.effectList = rawEvent.effect;
+	
+	this.update();
+}
+StateManager.prototype.applyDt = function(){
+	this.df = this.dt.applyWithRemoved(this.df);
+	this.dt = DeltaTable.from_dataFrame(this.df);
+	this.update();
+}
+StateManager.prototype.stateGoto = function(state){
+	console.log(state);
+	
+	d3.selectAll('.state-sensitive').classed('hidden',true);
+	d3.selectAll('.state-' + state).classed('hidden',false);
+	
+	this.state = state;
 }
 StateManager.prototype.clickOption = function(id){
 	// id is option id
-	this.dt = this.effectList[id](this.df);
-	
-	this.update();
+	if(this.state === 'waitChooseOption' || (this.state === 'choosingOption' && id !== this.selectOptionId)){
+		this.dt = this.effectList[id](this.df);
+		
+		this.update();
+		
+		this.selectOptionId = id;
+		this.stateGoto('choosingOption')
+	}
+	else if(this.state === 'choosingOption'){
+		this.applyDt();
+		
+		this.selectOptionId = undefined;
+		
+		this.rollEvent(); // ont of its effect is move state to "waitChooseOption" or "killing"
+	}
 }
 StateManager.prototype.sampleClick = function(rowId){
 	// rowId is row id of jStat.transpose(df.as_matrix()) 
 	
-	// need more condition limit
-	this.dt.isRemoved[rowId] = 1 - this.dt.isRemoved[rowId];
-	this.update();
+	if(this.state === 'killing'){
+		
+		if(this.dt.isRemoved[rowId]){
+			this.killing -= 1;
+			this.dt.isRemoved[rowId] = 0;
+		}
+		else if(this.killing < this.killLimit){
+			this.killing += 1;
+			this.dt.isRemoved[rowId] = 1;
+		}
+		
+		this.update();
+	}
 }
 StateManager.prototype.sampleSort = function(h){
 	// h is element of df header
@@ -680,19 +753,32 @@ StateManager.prototype.sampleSort = function(h){
 	this.update();
 }
 StateManager.prototype.killClick = function(){
-	this.df = this.dt.applyWithRemoved(this.df);
-	this.dt = DeltaTable.from_dataFrame(this.df);
-	//this.pop = new Population(this.pop, this.df, this.speed); // If compute it will reduce speed effect
-	this.update();
+	if(this.state === 'killing'){
+		this.applyDt();
+		this.stateGoto('waitResample');
+	}
 }
 StateManager.prototype.nextAge = function(){
-	this.pop = new Population(this.pop, this.df, this.speed);
-	this.df = this.pop.sample(this.size);
-	this.dt = DeltaTable.from_dataFrame(this.df);
-	
-	this.eventResidual = this.eventList.slice();
-	
-	this.update();
+	if(this.state === 'waitResample' || this.state === 'killing'){
+		this.pop = new Population(this.pop, this.df, this.speed);
+		this.df = this.pop.sample(this.size);
+		this.dt = DeltaTable.from_dataFrame(this.df);
+		
+		// resume state
+		this.eventResidual = this.eventList.slice();
+		this.killing = 0;
+		
+		this.update();
+		
+		this.rollEvent();
+	}
+}
+StateManager.prototype.cancelOption = function(){
+	if(this.state === 'choosingOption'){
+		this.stateGoto('waitChooseOption');
+		this.dt = DeltaTable.from_dataFrame(this.df);
+		this.update();
+	}
 }
 
 
@@ -711,36 +797,14 @@ function debug(){
 	['ng-matrix-names','ng-matrix-mu','ng-matrix-mu-change',
 	 'ng-matrix-variance','ng-matrix-variance-change','ng-matrix-correlation',
 	 'ng-matrix-correlation-change','ng-sample-header','ng-sample-value',
-	 'ng-main-title','ng-main-image','ng-main-content','ng-main-option'].map(function(className){
+	 'ng-main-title','ng-main-image','ng-main-content','ng-main-option',
+	 'ng-left-killing','ng-left-killLimit'].map(function(className){
 		 domMap[className] = document.getElementsByClassName(className)[0];
 	})
 
 	
 	names = df.header.map(function(s){return s.slice(0,5)});
 	
-	/*
-	var dt_matrix = df3.as_matrix().map(function(row,i){
-		return row.map(function(value,j){
-			var r = Math.random();
-			if(r<0.8){
-				return 0;
-			}
-			else if(r < 0.9){
-				return -0.1;
-			}
-			else{
-				return 0.1;
-			}
-		})
-	})
-	var isRemoved = jStat.arange(df3.size()).map(function(){
-		return Math.random() > 0.9 ? 1 : 0;
-	});
-	dt = DeltaTable.from_matrix(df.header, df.type, dt_matrix, isRemoved);
-	dt.values[dt.header[0]][0] = 0.1;
-	dt.values[dt.header[1]][0] = -0.1;
-	dt.values[dt.header[2]][0] = 0;
-	*/
 	
 	sampleViewer = new SampleViewer(domMap['ng-sample-header'], domMap['ng-sample-value']);
 	matrixViewer = new MatrixViewer(domMap);
@@ -749,14 +813,8 @@ function debug(){
 	
 	eventChainViewer = new EventChainViewer(domMap);
 	
-	/*
-	var title = 'Mutiple normal distribution game.';
-	var image = 'normal_pdf.png';
-	var content = 'Amazing! The mutiple norm distribution can make a game. Are you kidding me?';
-	var option = [  {id:0,value:"Yes, man."},
-					{id:1,value:"Fuck you, it's grim model."},
-					{id:2,value:"Sorry I can't get it."}];
-	*/
+	killingViewer = new KillingViewer(domMap);
+	
 					
 	classFighter = {
 		desc:{
@@ -799,16 +857,13 @@ function debug(){
 		pop : pop,
 		df : df2,
 		dt : DeltaTable.from_dataFrame(df2),
-		//title : title,
-		//image : image,
-		//content : content,
-		//option : option,
 		eventList : [classFighter],
 		situationViewer : situationViewer,
-		eventChainViewer : eventChainViewer
+		eventChainViewer : eventChainViewer,
+		killingViewer : killingViewer
 	});
 	
-	stateManager.rollEvent();
+	//stateManager.rollEvent();
 	stateManager.update();
 	
 	document.getElementsByClassName('debug')[0].onclick = function(){
@@ -824,6 +879,9 @@ function debug(){
 		eventManager['nextAge'].trigger();
 	}
 	
+	document.getElementsByClassName('cancel')[0].onclick = function(){
+		eventManager['cancelOption'].trigger();
+	}
 
 
 
