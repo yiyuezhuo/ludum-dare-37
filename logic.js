@@ -13,6 +13,40 @@ function loadScript(newJS){
 
 loadScript("mao.js");
 
+
+var eventManager = (function(){
+  function event(){
+    
+    var callbackList=[];
+    
+    function register(func){
+      callbackList.push(func);
+    }
+    
+    function trigger(){
+      var i,
+          length=callbackList.length;
+      for(i=0;i<length;i++){
+        if( callbackList[i].apply(this,arguments) ){
+          break;
+        }
+      }
+      //return triget.apply(this,arguments);
+    }
+    
+    return {register  : register,
+            trigger   : trigger};
+  }
+  
+  return {clickOption : event(),
+		  sampleClick : event(),
+		  sampleSort : event(),
+		  killClick : event(),
+		  nextAge : event()};
+
+}());
+
+
 var DataFrame = function(header, type, values){
 	this.header = header;
 	this.type = type;
@@ -341,8 +375,9 @@ SampleViewer.prototype.update = function(){
 				return h.slice(0,5); // prevent the string is too long  
 			})
 			.on('click',function(h){
-				that.sortByHeader(h);
-				that.update();
+				//that.sortByHeader(h);
+				//that.update();
+				eventManager['sampleSort'].trigger(h);
 			})
 	
 	var rowsData;
@@ -351,7 +386,7 @@ SampleViewer.prototype.update = function(){
 			var cellData = matRow.map(function(matCell,j){
 				return {value: matCell, change:0};
 			})
-			return {isRemoved:false, cellData:cellData};
+			return {isRemoved:false, cellData:cellData, rowId : i};
 		})
 	}
 	else{
@@ -369,7 +404,7 @@ SampleViewer.prototype.update = function(){
 					return {value: matCell, change: deltaMat[i][j]};
 				})
 			}
-			return {isRemoved: removed, cellData:cellData};
+			return {isRemoved: removed, cellData:cellData, rowId : i};
 		})
 	}
 	
@@ -377,7 +412,10 @@ SampleViewer.prototype.update = function(){
 	rows.enter().append('span').classed('row', true)
 		.style('width','100%')
 		.style('height', height + '%')
-		.classed("matrix", true);
+		.classed("matrix", true)
+		.on('click',function(d){
+			eventManager['sampleClick'].trigger(d.rowId);
+		});
 	rows.transition();
 	rows.exit().remove();
 	
@@ -411,20 +449,6 @@ SampleViewer.prototype.update = function(){
 		
 	})		
 }
-SampleViewer.prototype.sortByHeader = function(h){
-	
-	var header = this.df.header;
-	
-	var v = jStat.transpose(this.df.as_matrix());
-	var idx = header.indexOf(h);
-	var cmp = function(left, right){
-		return right[idx] - left[idx];
-	};
-	var rv = rank(v,cmp);
-	this.df = this.df.sortByIndex(rv);
-	this.dt = this.dt.sortByIndex(rv);
-	
-}
 
 
 
@@ -457,13 +481,15 @@ MatrixViewer.prototype.update = function(){
 
 }
 
-function SituationViewer(component,pop, df, dt){
+function SituationViewer(component,pop, df, dt, speed){
 	this.matrixViewer = component.matrixViewer;
 	this.sampleViewer = component.sampleViewer;
 
 	this.pop = pop;
 	this.df = df;
 	this.dt = dt;
+	
+	this.speed = speed;
 }
 SituationViewer.prototype.update = function(){
 	// All `update` method should be implemented non parameter. 
@@ -472,7 +498,7 @@ SituationViewer.prototype.update = function(){
 	var df = this.df;
 	var dt = this.dt;
 	
-	var pop2 = new Population(pop, dt.applyWithRemoved(df), 0.1);
+	var pop2 = new Population(pop, dt.applyWithRemoved(df), this.speed);
 	this.matrixViewer.pop1 = pop;
 	this.matrixViewer.pop2 = pop2;
 	this.matrixViewer.update();
@@ -504,7 +530,7 @@ EventChainViewer.prototype.update = function(){
 			return d.value;
 		})
 		.on(function(d){
-			// TODO : please implement event mechanism
+			eventManager['clickOption'].trigger(d.id);
 		})
 	optionSpan.transition()
 		.select('span')
@@ -516,10 +542,91 @@ EventChainViewer.prototype.update = function(){
 	
 }
 
-StateManager = function(pop,df,dt){
-	this.pop = pop;
-	this.df = df;
-	this.dt = dt;
+function StateManager(config){
+	// config:
+	// relative by eventChainViewer
+	// eventChainViewer, title, image, content, option
+	// relative by situationViewer
+	// situationViewer, pop, df, dt
+	
+	this.pop = config.pop;
+	this.df = config.df;
+	this.dt = config.dt;
+	
+	this.title = config.title;
+	this.image = config.image;
+	this.content = config.content;
+	this.option = config.option;
+	
+	this.size = config.size || 100; // sample size
+	this.speed = config.speed || 0.1; // pop change speed
+	
+	this.eventChainViewer = config.eventChainViewer;
+	this.situationViewer = config.situationViewer;
+		
+	eventManager['clickOption'].register(this.clickOption.bind(this));
+	eventManager['sampleClick'].register(this.sampleClick.bind(this));
+	eventManager['sampleSort'].register(this.sampleSort.bind(this));
+	eventManager['killClick'].register(this.killClick.bind(this));
+	eventManager['nextAge'].register(this.nextAge.bind(this));
+}
+StateManager.prototype.update = function(){
+	this.situationViewer.pop = this.pop;
+	this.situationViewer.df = this.df;
+	this.situationViewer.dt = this.dt;
+	this.situationViewer.speed = this.speed;
+	
+	this.situationViewer.update();
+	
+	// TODO : event state transition
+	this.eventChainViewer.title = this.title;
+	this.eventChainViewer.image = this.image;
+	this.eventChainViewer.content = this.content;
+	this.eventChainViewer.option = this.option;
+
+	this.eventChainViewer.update();
+}
+StateManager.prototype.sortByHeader = function(h){
+	
+	var header = this.df.header;
+	
+	var v = jStat.transpose(this.df.as_matrix());
+	var idx = header.indexOf(h);
+	var cmp = function(left, right){
+		return right[idx] - left[idx];
+	};
+	var rv = rank(v,cmp);
+	this.df = this.df.sortByIndex(rv);
+	this.dt = this.dt.sortByIndex(rv);
+	
+}
+StateManager.prototype.clickOption = function(id){
+	// id is option id
+	
+}
+StateManager.prototype.sampleClick = function(rowId){
+	// rowId is row id of jStat.transpose(df.as_matrix()) 
+	
+	// need more condition limit
+	this.dt.isRemoved[rowId] = 1 - this.dt.isRemoved[rowId];
+	this.update();
+}
+StateManager.prototype.sampleSort = function(h){
+	// h is element of df header
+	this.sortByHeader(h);
+	this.update();
+}
+StateManager.prototype.killClick = function(){
+	this.df = this.dt.applyWithRemoved(this.df);
+	this.dt = DeltaTable.from_dataFrame(this.df);
+	this.pop = new Population(this.pop, this.df, this.speed);
+	this.update();
+}
+StateManager.prototype.nextAge = function(){
+	this.df = this.pop.sample(this.size);
+	this.dt = DeltaTable.from_dataFrame(this.df);
+	this.pop = new Population(this.pop, this.df, this.speed);
+	this.update();
 }
 
 
@@ -567,24 +674,48 @@ function debug(){
 	dt.values[dt.header[1]][0] = -0.1;
 	dt.values[dt.header[2]][0] = 0;
 	
+	
 	sampleViewer = new SampleViewer(domMap['ng-sample-header'], domMap['ng-sample-value']);
 	matrixViewer = new MatrixViewer(domMap);
 	situationViewer =  new SituationViewer( {sampleViewer : sampleViewer,
-											 matrixViewer : matrixViewer},
-											 pop, df2, dt);
-	situationViewer.update(dt);
+											 matrixViewer : matrixViewer});
 	
 	eventChainViewer = new EventChainViewer(domMap);
-	eventChainViewer.title = 'Mutiple normal distribution game.';
-	eventChainViewer.image = 'normal_pdf.png';
-	eventChainViewer.content = 'Amazing! The mutiple norm distribution can make a game. Are you kidding me?';
-	eventChainViewer.option = [ {id:0,value:"Yes, man."},
-								{id:1,value:"Fuck you, it's grim model."},
-								{id:2,value:"Sorry I can't get it."},];
-	eventChainViewer.update();
+	
+	var title = 'Mutiple normal distribution game.';
+	var image = 'normal_pdf.png';
+	var content = 'Amazing! The mutiple norm distribution can make a game. Are you kidding me?';
+	var option = [  {id:0,value:"Yes, man."},
+					{id:1,value:"Fuck you, it's grim model."},
+					{id:2,value:"Sorry I can't get it."}];
 
+	
+	stateManager =  new StateManager({
+		pop : pop,
+		df : df2,
+		dt : dt,
+		title : title,
+		image : image,
+		content : content,
+		option : option,
+		situationViewer : situationViewer,
+		eventChainViewer : eventChainViewer
+	});
+	
+	stateManager.update();
+	
 	document.getElementsByClassName('debug')[0].onclick = function(){
-		situationViewer.df = df3;
-		situationViewer.update();
+		stateManager.df = df3;
+		stateManager.update();
 	}
+	
+	document.getElementsByClassName('Kill')[0].onclick = function(){
+		eventManager['killClick'].trigger();
+	}
+	
+	document.getElementsByClassName('nextAge')[0].onclick = function(){
+		eventManager['nextAge'].trigger();
+	}
+
+
 }
