@@ -37,7 +37,7 @@ eventList = [
 	{
 		desc:{
 			title: "Hello room!",
-			image: 'hello_room.png',
+			image: 'img/hello_room.png',
 			content: " It's room control room, what do you want? ",
 			option: [
 				'Do you hear program sing?',
